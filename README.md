@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🏐🎾 Beach Torneo
+# 🏐🎾 Tornei Beach e Padel
 
 ### Una piattaforma web per organizzare tornei di beach volley e padel.
 
