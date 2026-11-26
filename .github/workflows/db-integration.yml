@@ -1,0 +1,51 @@
+name: Database login integration tests
+
+on:
+  pull_request:
+    paths:
+      - 'db/**'
+      - '.github/workflows/db-integration.yml'
+  push:
+    paths:
+      - 'db/**'
+      - '.github/workflows/db-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-login:
+    name: Login RPC against disposable PostgreSQL 17
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: temporary-ci-password
+          POSTGRES_DB: tournament_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tournament_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:temporary-ci-password@127.0.0.1:5432/tournament_test
+      PGOPTIONS: "-c client_min_messages=warning"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+      - name: Create isolated test schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/tests/fixture.sql
+      - name: Apply incremental security patch
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/patches/v112_login_guard.sql
+      - name: Apply patch again (idempotence)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/patches/v112_login_guard.sql
+      - name: Test real PostgreSQL permissions and login rate limits
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/tests/test_v112_login.sql
