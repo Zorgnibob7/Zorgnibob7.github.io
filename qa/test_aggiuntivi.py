@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regressioni complementari V11.1. Test locali: NON contattano Supabase."""
+from datetime import datetime, timezone
 import shutil
 import sys
 from pathlib import Path
@@ -86,15 +87,15 @@ with sync_playwright() as pw:
                     return buildPlayerHTML({live:true});
                 } finally {torneo=orig;}
             }""",now)
-            page.clock.install(time=now)
+            page.clock.install(time=datetime.fromtimestamp(now / 1000, timezone.utc))
             page.set_content(html)
             page.evaluate("""()=>{st.me='A';st.tab='mie';st.res={'0-1':{d:1,a:21,b:18}};render()}""")
             banner=page.locator('#court-timing')
-            assert '14:00' in banner.inner_text() and '20 min' in banner.inner_text()
+            assert '14:00' in banner.inner_text() and '20 min' in banner.inner_text(), banner.inner_text()
             page.evaluate("""()=>{M.push({s:1,f:2,a:['C','Y'],b:['Z','W']});render()}""")
-            assert 'altro campo' in banner.inner_text() and 'Inizio stimato' not in banner.inner_text()
+            assert 'altro campo' in banner.inner_text() and 'Inizio stimato' not in banner.inner_text(), banner.inner_text()
             page.evaluate("M.pop();delete M[0].firstConfirmedAt;render()")
-            assert 'Una partita' in banner.inner_text() and 'Inizio stimato' not in banner.inner_text()
+            assert 'Una partita' in banner.inner_text() and 'Inizio stimato' not in banner.inner_text(), banner.inner_text()
         finally:
             page.close()
     check('Scheda giocatore: anticipo, compagno impegnato e risultato storico', player_timing)
