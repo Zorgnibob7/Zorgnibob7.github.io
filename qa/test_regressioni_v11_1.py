@@ -68,12 +68,12 @@ JS_MOCK=r'''data => {
    return response(t?.status==='active'&&p?.password===body.p_pin?p.token:null);
   }
   if(fn==='v11_logout')return response(null);
-  if(fn==='v11_create_tournament'){
+  if(fn==='v11_create_tournament'||fn==='import_tournament_backup'){
    if(!admin)return deny();
    const id=Math.max(0,...Object.keys(window.mockDB).map(Number))+1, obj=JSON.parse(body.p_json);
-   const slug=body.p_slug+'-'+id;
+   const slug=(body.p_slug||'backup-'+body.p_request)+'-'+id;
    window.mockDB[id]={id,title:obj.name,sport:obj.sport,slug,status:'active',json:body.p_json,t:Date.now(),revision:0};
-   window.mockPassword[id]={password:body.p_pin,token:'x'.repeat(64)};window.mockScores[id]={};return response(id);
+   window.mockPassword[id]={password:body.p_pin,token:'x'.repeat(64)};window.mockScores[id]=Object.fromEntries((body.p_rows||[]).map(row=>[row.id,row]));return response(id);
   }
   if(fn==='v11_archive_tournament'){
    if(!admin)return deny();window.mockDB[body.p_tournament_id].status=body.p_archived?'archived':'active';return response(null);
@@ -406,6 +406,31 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as directory:
    page.close()
   return True
  check('QR e link giocatori: destinazione, sola lettura e nome al rientro',shared_player_link)
+
+ def import_backup():
+  root.locator('[data-act=v11-import]').click()
+  dialog=root.locator('#modal')
+  def upload(data):
+   dialog.locator('[type=file]').set_input_files({'name':'backup.json','mimeType':'application/json','buffer':json.dumps(data).encode()})
+  upload({'version':2})
+  dialog.get_by_text('Backup non valido.',exact=False).wait_for()
+  assert dialog.locator('[type=submit]').is_disabled()
+  t={'name':'Padel Open','sport':'padel','formatType':'baraonda','numCourts':1,
+     'players':[{'name':n,'id':n,'gender':'F'} for n in 'ABCD'],
+     'slots':[['10:00','10:20']],'matches':[{'s':0,'f':1,'a':['A','B'],'b':['C','D']}]}
+  upload({'schema':'beach-torneo-backup','version':1,'tournament':t,'scores':{'0-1':{'a':4,'b':2,'d':1}}})
+  dialog.get_by_text('1 risultati confermati',exact=False).wait_for()
+  assert dialog.locator('[name=title]').input_value()=='Padel Open'
+  dialog.locator('[name=pin]').fill('nuova-password-qa')
+  old=root.evaluate('JSON.stringify(mockDB[2])')
+  dialog.locator('[type=submit]').click()
+  root.wait_for_function("V11_CATALOG.some(t=>t.slug.startsWith('backup-'))")
+  assert root.evaluate('JSON.stringify(mockDB[2])')==old
+  new_id=root.evaluate("V11_CATALOG.find(t=>t.slug.startsWith('backup-')).id")
+  assert root.evaluate('id=>JSON.parse(mockDB[id].json)',new_id)==t
+  assert root.evaluate("id=>mockScores[id]['0-1']",new_id)=={'id':'0-1','a':4,'b':2,'d':1}
+  return True
+ check('Dashboard: rifiuta JSON non valido e importa calendario e punteggi come nuovo torneo',import_backup)
 
  def no_console_errors():
   assert not ERRORS,ERRORS
