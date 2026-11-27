@@ -408,6 +408,8 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as directory:
  check('QR e link giocatori: destinazione, sola lettura e nome al rientro',shared_player_link)
 
  def import_backup():
+  # La dashboard pubblicata è HTTPS. about:blank del test può non esporre randomUUID.
+  root.evaluate("if(!crypto.randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=> '162846ac-5bfe-4af5-91e2-4e27b68acbfd'})")
   root.locator('[data-act=v11-import]').click()
   dialog=root.locator('#modal')
   def upload(data):
@@ -419,7 +421,7 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as directory:
      'players':[{'name':n,'id':n,'gender':'F'} for n in 'ABCD'],
      'slots':[['10:00','10:20']],'matches':[{'s':0,'f':1,'a':['A','B'],'b':['C','D']}]}
   upload({'schema':'beach-torneo-backup','version':1,'tournament':t,'scores':{'0-1':{'a':4,'b':2,'d':1}}})
-  dialog.get_by_text('1 risultati confermati',exact=False).wait_for()
+  dialog.get_by_text('Risultati confermati: 1',exact=False).wait_for()
   assert dialog.locator('[name=title]').input_value()=='Padel Open'
   dialog.locator('[name=pin]').fill('nuova-password-qa')
   old=root.evaluate('JSON.stringify(mockDB[2])')
