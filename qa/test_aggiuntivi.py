@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regressioni complementari V11.1. Test locali: NON contattano Supabase."""
+from datetime import datetime, timezone
 import shutil
 import sys
 from pathlib import Path
@@ -59,6 +60,45 @@ with sync_playwright() as pw:
          const html=renderTurni();return html.includes('&lt;img')&&!html.includes('<img src=x onerror=alert(1)>');
         } finally{torneo=original;scores=saved;}
     })()"""))
+
+    def conflict_visibility():
+        button = p.locator('#v111-resolve')
+        assert button.is_hidden()
+        p.evaluate("LIVE=true;EDITOR=true;v111Conflict=true;v9Status()")
+        try:
+            assert button.is_visible()
+        finally:
+            p.evaluate("LIVE=false;v111Conflict=false;v9Status()")
+        assert button.is_hidden()
+    check('Conflitto: visibile solo durante un conflitto online', conflict_visibility)
+
+    def player_timing():
+        now = p.evaluate("new Date().setHours(13,40,0,0)")
+        page = ctx.new_page()
+        try:
+            html = p.evaluate("""stamp=>{
+                const orig=torneo;
+                try {
+                    const match=(s,a,b)=>({id:s+'-1',s,f:1,a,b});
+                    torneo={...defaultTournament,players:'ABCDEFGHIJKL'.split('').map(name=>({name})),
+                        slots:[['14:00','14:20'],['14:20','14:40'],['14:40','15:00']],
+                        matches:[{...match(0,['E','F'],['G','H']),firstConfirmedAt:stamp},
+                            match(1,['I','J'],['K','L']),match(2,['A','B'],['C','D'])]};
+                    return buildPlayerHTML({live:true});
+                } finally {torneo=orig;}
+            }""",now)
+            page.clock.install(time=datetime.fromtimestamp(now / 1000, timezone.utc))
+            page.set_content(html)
+            page.evaluate("""()=>{st.me='A';st.tab='mie';st.res={'0-1':{d:1,a:21,b:18}};render()}""")
+            banner=page.locator('#court-timing')
+            assert '14:00' in banner.inner_text() and '20 min' in banner.inner_text(), banner.inner_text()
+            page.evaluate("""()=>{M.push({s:1,f:2,a:['C','Y'],b:['Z','W']});render()}""")
+            assert 'altro campo' in banner.inner_text() and 'Inizio stimato' not in banner.inner_text(), banner.inner_text()
+            page.evaluate("M.pop();delete M[0].firstConfirmedAt;render()")
+            assert 'Una partita' in banner.inner_text() and 'Inizio stimato' not in banner.inner_text(), banner.inner_text()
+        finally:
+            page.close()
+    check('Scheda giocatore: anticipo, compagno impegnato e risultato storico', player_timing)
 
     def print_calendar():
         p.evaluate("""()=>{
