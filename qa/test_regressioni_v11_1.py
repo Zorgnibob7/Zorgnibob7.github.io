@@ -368,6 +368,45 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as directory:
   assert public2.evaluate('mockScores[2]["0-1"].a===7')
   return True
  check('Salvataggio atomico: JSON padel e punteggi nella stessa RPC',one_commit)
+ def shared_player_link():
+  data=state()
+  data['scores']['2']={}
+  tournament=json.loads(data['db']['2']['json'])
+  tournament.update(players=[{'id':name,'name':name,'gender':'M'} for name in ['Anna','Alessandro','Carlo','Dario']],
+                    slots=[['14:40','15:00']],matches=[{'s':0,'f':1,'a':['Anna','Alessandro'],'b':['Carlo','Dario']}])
+  data['db']['2']['json']=json.dumps(tournament)
+  page=ctx.new_page()
+  base='https://torneo.example/test/'
+  page.route(base+'**',lambda route:route.fulfill(content_type='text/html',body=SITE))
+  session={'access_token':'admin-jwt','refresh_token':'refresh-jwt','expires_at':4102444800}
+  page.add_init_script('if(window===top){('+JS_MOCK+')('+json.dumps(data)+');sessionStorage.setItem('+
+                       json.dumps('beach-torneo-v11-architetto:'+URL)+','+json.dumps(json.dumps(session))+');}')
+  try:
+   page.goto(base+'?torneo=padel-open-2')
+   page.wait_for_function('EDITOR && V11_IS_ARCHITECT')
+   page.evaluate("activeTab='export';render()")
+   page.get_by_role('button',name='Mostra QR').click()
+   assert page.locator('#share-code svg path').count()
+   url=page.locator('#share-url').input_value()
+   assert url==base+'?torneo=padel-open-2&vista=giocatore'
+   page.get_by_role('button',name='Chiudi',exact=True).click()
+   page.evaluate("Object.defineProperty(navigator,'clipboard',{value:{writeText:async t=>window.copied=t}})")
+   page.get_by_role('button',name='Copia link giocatori').click()
+   assert page.evaluate('window.copied')==url
+   page.goto(url)
+   page.locator('#share-player').select_option('Alessandro')
+   page.wait_for_function("localStorage.getItem('beach-me:2')==='Alessandro'")
+   page.reload()
+   banner=page.frame_locator('#pv').locator('#court-timing')
+   banner.filter(has_text='Alessandro').wait_for(timeout=6000)
+   assert page.locator('#share-player').count()==0
+   assert page.evaluate('!EDITOR && !V11_IS_ARCHITECT')
+   assert page.locator('#lockBtn').count()==0
+  finally:
+   page.close()
+  return True
+ check('QR e link giocatori: destinazione, sola lettura e nome al rientro',shared_player_link)
+
  def no_console_errors():
   assert not ERRORS,ERRORS
   return True
