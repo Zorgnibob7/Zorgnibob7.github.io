@@ -398,7 +398,7 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as directory:
    page.wait_for_function("localStorage.getItem('beach-me:2')==='Alessandro'")
    page.reload()
    banner=page.frame_locator('#pv').locator('#court-timing')
-   banner.get_by_text('Alessandro',exact=False).wait_for(timeout=6000)
+   banner.filter(has_text='Alessandro').wait_for(timeout=6000)
    assert page.locator('#share-player').count()==0
    assert page.evaluate('!EDITOR && !V11_IS_ARCHITECT')
    assert page.locator('#lockBtn').count()==0
