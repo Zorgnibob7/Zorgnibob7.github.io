@@ -3422,7 +3422,7 @@ function dashboardImportDialog(){
      backup=parsed;request=crypto.randomUUID();
      title.value=parsed.torneo.name||'Torneo importato';
      status.textContent=[parsed.torneo.sport==='padel'?'Padel':'Beach volley',parsed.torneo.players.length+' giocatori',
-       parsed.torneo.matches.filter(m=>!m.fr).length+' partite',Object.values(parsed.scores).filter(r=>r.d).length+' risultati confermati'].join(' · ');
+       'Partite: '+parsed.torneo.matches.filter(m=>!m.fr).length,'Risultati confermati: '+Object.values(parsed.scores).filter(r=>r.d).length].join(' · ');
      submit.disabled=false;
    }catch(e){if(file.files[0]===selected)status.textContent='Backup non valido. '+e.message;}
  };
