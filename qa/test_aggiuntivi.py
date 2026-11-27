@@ -89,7 +89,7 @@ with sync_playwright() as pw:
             page.clock.install(time=now)
             page.set_content(html)
             page.evaluate("""()=>{st.me='A';st.tab='mie';st.res={'0-1':{d:1,a:21,b:18}};render()}""")
-            banner=page.locator('.nx').first
+            banner=page.locator('#court-timing')
             assert '14:00' in banner.inner_text() and '20 min' in banner.inner_text()
             page.evaluate("""()=>{M.push({s:1,f:2,a:['C','Y'],b:['Z','W']});render()}""")
             assert 'altro campo' in banner.inner_text() and 'Inizio stimato' not in banner.inner_text()
