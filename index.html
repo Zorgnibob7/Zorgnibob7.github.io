@@ -2923,11 +2923,14 @@ function v6ValidateBackup(obj){
    const raw=JSON.stringify(obj,(k,v)=>['name','first','surname','notes','subtitle'].includes(k)&&typeof v==='string'?'':(['a','b','x'].includes(k)&&Array.isArray(v)&&v.every(n=>typeof n==='string')?[]:v));if(/[<>]/.test(raw))throw Error('Il backup contiene markup in campi non testuali.');
    return {torneo:t,scores:Object.fromEntries(Object.entries(s).filter(([id])=>/^\d+-[1-9]\d*$/.test(id)))};
 }
+async function readTournamentBackup(file){
+    if(file.size>5_000_000)throw Error('Il file supera il limite di 5 MB.');
+    return v6ValidateBackup(JSON.parse(await file.text()));
+}
 async function v6RestoreFile(file){
   if(!file)return;
-  if(file.size>5_000_000){flash('Il file supera il limite di 5 MB.');return;}
   try{
-    const parsed=v6ValidateBackup(JSON.parse(await file.text()));
+    const parsed=await readTournamentBackup(file);
     const same=(torneo.name===parsed.torneo.name);
     let msg='Il backup è del '+(parsed.torneo.name||'torneo')+' con '+parsed.torneo.players.length+' giocatori e '+parsed.torneo.matches.length+' caselle di calendario.\n\nSostituire il torneo attuale? Verrà salvata una copia locale per annullare.';
     if(LIVE){const answer=window.prompt(msg+'\n\nATTENZIONE: sei online. I dati importati saranno pubblicati e potrebbero sovrascrivere risultati più recenti.\nDigita SOVRASCRIVI per confermare.');if(answer!=='SOVRASCRIVI')return;}
@@ -3380,7 +3383,7 @@ async function v11RenderAdmin(){
  </div></article>`).join('');
    document.getElementById('v').innerHTML=`<div class="v11-page"><div class="v11-hero v11-hero-dash"><div><h1>🏛️ Dashboard Architetto</h1><p>Gestisci tutti i tornei e i mini-organizzatori da un unico posto.</p></div><button class="sm" data-act="v11-logout">Esci</button></div>
    <div class="v11-stats"><div class="card"><strong>${V11_CATALOG.length}</strong><span>Totali</span></div><div class="card"><strong>${active}</strong><span>Attivi</span></div><div class="card"><strong>${arch}</strong><span>Archiviati</span></div></div>
-   <div class="v11-bar"><h2>I tuoi tornei</h2><button class="sm pri" data-act="v11-new">＋ Crea torneo</button></div>
+   <div class="v11-bar"><h2>I tuoi tornei</h2><div class="v11-actions"><button class="sm" data-act="v11-import">Importa da JSON</button><button class="sm pri" data-act="v11-new">＋ Crea torneo</button></div></div>
    <div class="v11-list">${rows||'<div class="card">Nessun torneo. Creane uno per cominciare.</div>'}</div>
    <p class="mu">I link aprono le pagine pubbliche dei tornei. Da questo dispositivo, mentre sei autenticato come Architetto, puoi anche modificarli senza utilizzare le password dei mini-organizzatori.</p></div>`;
  }catch(e){v11LoginHTML('Impossibile caricare la dashboard: '+e.message);}
@@ -3397,6 +3400,48 @@ function v11NewDialog(){
  <p class="mu">Ogni torneo avrà un indirizzo pubblico diverso. Conserva la password specifica: non compare nei backup.</p>
  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="sm" data-act="close-modal">Annulla</button><button class="sm pri" id="v11-create-btn" data-act="v11-create">Crea torneo</button></div>`);
  document.getElementById('v11-new-name')?.focus();
+}
+function dashboardImportDialog(){
+ const modal=v11Modal(`<h3>Importa torneo da JSON</h3>
+   <p>Il backup diventerà un nuovo torneo con un proprio link.</p>
+   <form><div class="form-group"><label>Backup JSON<input class="form-control" type="file" accept=".json,application/json" required></label></div>
+   <p class="mu" role="status"></p>
+   <div class="form-group"><label>Nome torneo<input class="form-control" name="title" maxlength="120" required></label></div>
+   <div class="form-group"><label>Nuova password mini-organizzatore<input class="form-control" name="pin" type="password" autocomplete="new-password" required></label></div>
+   <div class="v11-actions"><button type="button" class="sm" data-act="close-modal">Annulla</button><button type="submit" class="sm pri" disabled>Importa torneo</button></div></form>`);
+ const form=modal.querySelector('form'),file=form.querySelector('[type=file]'),submit=form.querySelector('[type=submit]');
+ const status=form.querySelector('[role=status]'),title=form.elements.namedItem('title'),pin=form.elements.namedItem('pin');
+ let backup=null,request=null;
+ file.onchange=async()=>{
+   const selected=file.files[0];
+   backup=null;submit.disabled=true;title.value='';status.textContent='';
+   if(!selected)return;
+   try{
+     const parsed=await readTournamentBackup(selected);
+     if(file.files[0]!==selected)return;
+     backup=parsed;request=crypto.randomUUID();
+     title.value=parsed.torneo.name||'Torneo importato';
+     status.textContent=[parsed.torneo.sport==='padel'?'Padel':'Beach volley',parsed.torneo.players.length+' giocatori',
+       'Partite: '+parsed.torneo.matches.filter(m=>!m.fr).length,'Risultati confermati: '+Object.values(parsed.scores).filter(r=>r.d).length].join(' · ');
+     submit.disabled=false;
+   }catch(e){if(file.files[0]===selected)status.textContent='Backup non valido. '+e.message;}
+ };
+ form.onsubmit=async e=>{
+   e.preventDefault();
+   if(!backup||submit.disabled)return;
+   const name=title.value.trim();
+   if(!name||!v11ValidPassword(pin.value)){status.textContent='Inserisci un nome e una password di 12–72 byte, senza spazi ai bordi.';return;}
+   const obj={...backup.torneo,name,sport:backup.torneo.sport||'beach'};
+   const controls=Array.from(form.elements);
+   controls.forEach(el=>el.disabled=true);
+   try{
+     await v11AdminRpc('import_tournament_backup',{p_request:request,p_json:JSON.stringify(obj),p_pin:pin.value,p_rows:v111ScoreRows(backup.scores)});
+     modal.remove();await v11RenderAdmin();flash('Torneo importato.');
+   }catch(err){
+     status.textContent='Importazione non completata. '+err.message;
+     controls.forEach(el=>el.disabled=false);
+   }
+ };
 }
 function v11ValidPassword(p){const n=new TextEncoder().encode(p||'').length;return n>=12&&n<=72&&p===p.trim()&&!['CAMBIA-QUESTO-PIN','SCEGLI-UNA-PASSWORD-NUOVA'].includes(p);}
 async function v11Create(){
@@ -3457,6 +3502,7 @@ document.addEventListener('click',e=>{
  if(!V11_IS_ARCHITECT){flash('Accesso Architetto richiesto');return;}
  if(a==='v11-logout')v11AdminLogout();
  else if(a==='v11-new')v11NewDialog();
+ else if(a==='v11-import')dashboardImportDialog();
  else if(a==='v11-create')v11Create();
  else if(a==='v11-copy-link'){
    const t=v11Selected(id);if(t)navigator.clipboard.writeText(v11Href(t.slug)).then(()=>flash('Link copiato.')).catch(()=>flash('Copia non consentita dal browser.'));

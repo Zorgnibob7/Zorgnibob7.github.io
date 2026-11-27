@@ -49,3 +49,5 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/patches/v112_login_guard.sql
       - name: Test real PostgreSQL permissions and login rate limits
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/tests/test_v112_login.sql
+      - name: Test atomic tournament backup import
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/tests/test_import_backup.sql
